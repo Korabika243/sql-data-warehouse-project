@@ -1,0 +1,47 @@
+
+/* 
+==============================================
+CREATE DATABASE AND SCHEMAS
+=============================================
+
+script Purpose:
+this script create database 'myproject' after checking if it already exists.
+if the database exists,it’s droped and recreated.Additionaly,the script sets up three schemas
+within database :'bronze','silver','gold'.
+
+Warning:
+execute this script will drop entire'myproject'database if it exists.
+All data in the database will be permantly deleted.proceed with caution 
+and ensure you have backup of data when you’re running this script.
+*/
+
+
+
+use master ;
+go
+--drop and recreate the 'myproject' database
+
+if exists ( select 'yep' from sys.databases  where name = 'myproject')
+begin
+alter database myproject set single_user with rollback immediate ;
+drop database myproject;
+end;
+go
+
+-- create Database 'myproject'
+
+CREATE DATABASE myproject
+go
+
+use myproject;
+go
+--create schemas
+
+create schema bronze
+go
+create schema silver
+go
+create schema gold
+go
+
+
