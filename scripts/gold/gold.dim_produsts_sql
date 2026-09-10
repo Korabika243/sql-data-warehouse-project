@@ -1,0 +1,19 @@
+
+create view gold.dim_proudcts as
+SELECT 
+    ROW_NUMBER() OVER (ORDER BY pi.prd_id) AS  product_key,
+    pi.prd_id                              AS product_id,
+    pi.prd_key                             AS product_number,
+    pi.prd_nm                              AS product_name,
+    pi.cat_key                             AS category_key,
+    pcg.CAT                                AS category,
+    pcg.SUBCAT                             AS subcategory,
+    pcg.MAINTENANCE,
+    pi.prd_cost                            AS cost,
+    pi.prd_line                            AS line,
+    pi.prd_start_dt                        AS start_date,
+    pi.prd_end_dt                          AS end_date
+FROM silver.crm_prd_inf AS pi
+LEFT JOIN silver.erp_PX_CAT_G1V2 AS pcg
+    ON pi.cat_key = pcg.ID
+WHERE pi.prd_end_dt IS NULL;
