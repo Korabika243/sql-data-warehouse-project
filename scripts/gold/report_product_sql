@@ -1,0 +1,66 @@
+/* 
+=====================================================================
+product Report
+=====================================================================
+purpose:
+      -this report consolidates key product metrics and behaviors
+
+Highlights:
+    1.Gathers essential fields such as product name,category,subcategory,and cost.
+	2.Segments products by revenue to identify high-performers,mid-range,low-performers.
+	3.Aggregates product-level metrics:
+	     -total orders 
+		 -total sales
+		 -total customers (unique)
+		 -lifespan (in months)
+	4.Calculates valuable KPIs:
+	     -recency (months since last order)
+		 -average order revenue (AOR)
+		 -average monthly revenue
+=======================================================================
+*/
+
+create view gold.report_products as
+with base_query as (
+/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1) Base query: retrieves core sales columns only (no product join here,
+   to avoid duplicating rows before aggregation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+select order_number,customer_key,order_date,sales,sa.product_key
+from gold.fact_sales sa
+where order_date is not null
+)
+, product_aggregations as (
+/*<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+2) Aggregate products: summarize key metrics at the product level
+   (grouped only by product_key, the true grain of this aggregation)
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+select product_key,
+COUNT(distinct order_number)total_orders,count(distinct customer_key)total_customers,
+min(order_date)frist_order,max(order_date)last_order,DATEDIFF(month,min(order_date),max(order_date))life_span,
+sum(sales)total_sales
+from base_query
+group by product_key
+)
+/*<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+3) Final select: join product descriptive fields back in once per
+   product, then compute performance segments and KPIs
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+select pr.product_number,pr.product_name,pr.category,pr.subcategory,pr.cost,
+avg(pr.cost)over(partition by pr.category)avg_category_cost,
+pa.frist_order,pa.life_span,
+DATEDIFF(month,pa.last_order,getdate())recency,
+case when pa.total_sales < 400000 then 'low_performers'
+when pa.total_sales < 800000 then 'mid_range'
+else 'high_performers'
+end product_performance,
+pa.total_orders,pa.total_customers,pa.total_sales,
+case when pa.total_orders=0 then 0 
+ else pa.total_sales/pa.total_orders    
+ end avg_order_revenue,
+CASE WHEN pa.life_span =0 THEN 0
+ELSE pa.total_sales/pa.life_span 
+END avg_monthly_revenue
+from product_aggregations pa
+left join gold.dim_proudcts pr
+on pa.product_key = pr.product_key
