@@ -1,0 +1,72 @@
+/* 
+=====================================================================
+Customer Report
+=====================================================================
+purpose:
+      -this report consolidates key customer metrics and behaviors
+
+Highlights:
+    1.Gathers essential fields such as names, ages, and transaction details.
+	2.Segments customers into categories (VIP,Regular,New) and age groups.
+	3.Aggregates customer-level metrics:
+	     -total orders 
+		 -total sales
+		 -total quantity purchased
+		 -total products
+		 -lifespan (in months)
+	4.Calculates valuable KPIs:
+	     -recency (months since last order)
+		 -average order value
+		 -average monthly spend
+=======================================================================
+*/
+
+CREATE VIEW gold.report_customers as
+with base_query as (
+/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1) Base query: retrieves core sales columns only (no customer join here,
+   to avoid duplicating rows before aggregation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+select order_number,product_key,order_date,sales,quantity,sa.customer_key
+from gold.fact_sales sa 
+where order_date is not null
+)
+, customer_aggregation as (
+/*<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+2) Aggregate customers: summarize key metrics at the customer level
+   (grouped only by customer_key, the true grain of this aggregation)
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+select customer_key,
+count(distinct order_number)total_order,COUNT(distinct product_key)total_products,
+MAX(order_date)last_order,
+datediff(month,min(order_date),MAX(order_date))life_span,sum(sales)total_sales,sum(quantity)total_quantity
+from base_query
+group by customer_key
+)
+/*<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+3) Final select: join customer descriptive fields back in once per
+   customer, then compute segments and KPIs
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+select ca.customer_key,cu.customer_number,cu.customer_name,
+DATEDIFF(YEAR,cu.birthdate,getdate()) age,
+case when DATEDIFF(YEAR,cu.birthdate,getdate()) <20 then'under 20'
+when DATEDIFF(YEAR,cu.birthdate,getdate()) <45 then'20:45'
+when DATEDIFF(YEAR,cu.birthdate,getdate()) < 65 then '45:65'
+else 'above 65'
+end age_group,
+case when total_sales >5000 and life_span >=12 then'VIP'
+WHEN total_sales<5000 and life_span >=12 then'Regular'
+else 'New'
+end customer_clasification,
+last_order,DATEDIFF(month,last_order,GETDATE())recency,
+total_order,total_products,total_quantity,total_sales,
+life_span,
+case when total_order=0 then 0 
+ else total_sales/total_order    
+ end avg_order_value,
+CASE WHEN life_span =0 THEN 0
+ELSE total_sales/life_span 
+END avg_monthly_spend
+from customer_aggregation ca
+left join gold.dim_customers cu
+on ca.customer_key = cu.customer_key
